@@ -472,15 +472,6 @@
             text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
         }
 
-        .strikes {
-            color: var(--accent-red);
-        }
-
-        .strikes span {
-            color: var(--accent-red) !important;
-            text-shadow: 0 0 5px rgba(255, 0, 64, 0.5) !important;
-        }
-
         .console-panel {
             position: fixed;
             bottom: 80px;
@@ -1193,7 +1184,7 @@
 
             <div class="stats-row">
                 <div class="stat-item">Correct: <span id="score-display">0</span></div>
-                <div class="stat-item strikes">Strikes: <span id="strikes-display">3</span>/<span id="max-strikes">3</span></div>
+                <div class="stat-item">Wrong: <span id="wrong-display">0</span></div>
                 <div class="stat-item">Mode: <span id="mode-display">Binary</span></div>
             </div>
         </div>
@@ -1302,8 +1293,7 @@
         <div id="advanced-controls" class="debug-locked-advanced" style="display: flex; gap: 10px;">
             <button class="debug-btn" onclick="addXP(xpNeededForNextLevel)">Level Up</button>
             <button class="debug-btn" onclick="skipQuestion()">Skip Q</button>
-            <button class="debug-btn" onclick="setStrikes(3)">Reset Strikes</button>
-            <button class="debug-btn" onclick="setStrikes(999)">God Mode</button>
+            <button class="debug-btn" onclick="addWrong(10)">+10 Wrong</button>
         </div>
     </div>
 
@@ -1314,13 +1304,12 @@
             level: 1,
             xpNeeded: 100,
             score: 0,
-            strikes: 3,
-            maxStrikes: 3,
+            wrongCount: 0,
             currentQuestion: null,
             isProcessing: false,
             debugUnlocked: false,
             coins: 0,
-            equippedAchievement: null, // The achievement ID currently equipped
+            equippedAchievement: null,
             totalXP: 0,
             totalCoins: 0,
             purchases: 0,
@@ -1344,14 +1333,13 @@
         const MAX_CONSOLE_LINES = 100;
 
         // --- Achievements Database ---
-        // Each achievement has: id, name, description, and image (which serves as both avatar and achievement icon)
         const ACHIEVEMENTS_DB = {
             'guest': { 
                 id: 'guest',
                 name: 'Guest', 
                 desc: 'Default visitor',
                 img: 'Guest.png',
-                starting: true // Available from the start
+                starting: true
             },
             'failure': { 
                 id: 'failure',
@@ -1362,7 +1350,7 @@
             'neither_precise': { 
                 id: 'neither_precise',
                 name: 'Neither Accurate Nor Precise', 
-                desc: 'Lose the game',
+                desc: 'Get 10 wrong answers',
                 img: 'Ben.png'
             },
             'entrepreneur': { 
@@ -1427,7 +1415,6 @@
             }
         };
 
-        // List of achievement IDs in display order
         const ACHIEVEMENT_ORDER = [
             'guest', 'noob', 'thinker', 'thinker20', 'grade3', 'ascended_heaven',
             'god_complex', 'god', 'entrepreneur', 'photogenic',
@@ -1438,9 +1425,7 @@
         const SHOP_ITEMS = [
             { id: 'levelUp', name: '+1 Level', desc: 'Instantly level up', basePrice: 50 },
             { id: 'xpBoost', name: '+50% XP Boost', desc: '50% more XP until wrong answer', basePrice: 100 },
-            { id: 'coinBoost', name: '+50% Coin Boost', desc: '50% more coins until wrong answer', basePrice: 150 },
-            { id: 'extraStrikes', name: '+1 Strike', desc: 'Extra strike for current level', basePrice: 75 },
-            { id: 'maxStrikes', name: '+1 Max Strike', desc: 'Permanently increase max strikes by 1', basePrice: 200 }
+            { id: 'coinBoost', name: '+50% Coin Boost', desc: '50% more coins until wrong answer', basePrice: 150 }
         ];
 
         // --- Constants ---
@@ -1456,11 +1441,9 @@
         document.addEventListener('DOMContentLoaded', () => {
             try {
                 loadGame();
-                // Ensure guest is always considered unlocked
                 if (!state.achievements.includes('guest')) {
                     state.achievements.push('guest');
                 }
-                // Default to guest if nothing equipped
                 if (!state.equippedAchievement || !state.achievements.includes(state.equippedAchievement)) {
                     state.equippedAchievement = 'guest';
                 }
@@ -1544,7 +1527,6 @@
             const currentTitleDisplay = document.getElementById('current-title-display');
             const currentAvatarDisplay = document.getElementById('current-avatar-display');
             
-            // Update current display
             const currentAch = ACHIEVEMENTS_DB[state.equippedAchievement];
             if (currentAch) {
                 currentTitleDisplay.textContent = currentAch.name;
@@ -1554,7 +1536,6 @@
                 };
             }
             
-            // Render all possible titles
             grid.innerHTML = '';
             ACHIEVEMENT_ORDER.forEach(achId => {
                 const ach = ACHIEVEMENTS_DB[achId];
@@ -1598,7 +1579,6 @@
             const oldAch = state.equippedAchievement;
             state.equippedAchievement = achId;
             
-            // Unlock photogenic if this is the first time changing title (and not to guest)
             if (oldAch === 'guest' && achId !== 'guest') {
                 unlockAchievement('photogenic');
             }
@@ -1632,7 +1612,7 @@
         // --- Stats Functions ---
         function renderStats() {
             const grid = document.getElementById('stats-grid');
-            const totalAttempts = state.score + state.questionsWrong.length;
+            const totalAttempts = state.score + state.wrongCount;
             const accuracy = totalAttempts > 0 ? ((state.score / totalAttempts) * 100).toFixed(1) : 0;
             
             const currentAch = ACHIEVEMENTS_DB[state.equippedAchievement];
@@ -1645,9 +1625,8 @@
                 { label: 'Purchases Made', value: state.purchases },
                 { label: 'Accuracy', value: accuracy + '%' },
                 { label: 'Questions Right', value: state.score },
-                { label: 'Questions Wrong', value: state.questionsWrong.length },
-                { label: 'Current Level', value: state.level },
-                { label: 'Max Strikes', value: state.maxStrikes }
+                { label: 'Questions Wrong', value: state.wrongCount },
+                { label: 'Current Level', value: state.level }
             ];
             
             grid.innerHTML = stats.map(stat => `
@@ -1689,7 +1668,6 @@
                 saveGame();
                 renderAchievements();
                 
-                // If profile modal is open on titles tab, refresh it
                 if (document.getElementById('profile-modal').style.display === 'flex' && 
                     document.getElementById('tab-profile').classList.contains('active')) {
                     renderTitleSelection();
@@ -1705,6 +1683,7 @@
             if (state.score >= 500) unlockAchievement('ascended_heaven');
             if (state.totalXP >= 100) unlockAchievement('god_complex');
             if (state.totalXP >= 100000) unlockAchievement('god');
+            if (state.wrongCount >= 10) unlockAchievement('neither_precise');
         }
 
         // --- Shop Functions ---
@@ -1757,15 +1736,6 @@
                     state.activeBoosts.coins = true;
                     document.getElementById('boost-indicator').classList.add('active');
                     log("Purchased: Coin Boost active!", "success");
-                    break;
-                case 'extraStrikes':
-                    state.strikes++;
-                    log("Purchased: +1 Strike!", "success");
-                    break;
-                case 'maxStrikes':
-                    state.maxStrikes++;
-                    state.strikes++;
-                    log(`Purchased: Max strikes increased to ${state.maxStrikes}!`, "success");
                     break;
             }
             
@@ -1907,12 +1877,10 @@
                 if (!Array.isArray(state.questionsWrong)) state.questionsWrong = [];
                 if (!Array.isArray(state.achievements)) state.achievements = [];
                 
-                // Ensure guest is always unlocked
                 if (!state.achievements.includes('guest')) {
                     state.achievements.push('guest');
                 }
                 
-                // Validate equipped achievement
                 if (!state.equippedAchievement || !state.achievements.includes(state.equippedAchievement)) {
                     state.equippedAchievement = 'guest';
                 }
@@ -1948,8 +1916,7 @@
                 level: 1,
                 xpNeeded: 100,
                 score: 0,
-                strikes: 3,
-                maxStrikes: 3,
+                wrongCount: 0,
                 currentQuestion: null,
                 isProcessing: false,
                 debugUnlocked: wasDebugUnlocked,
@@ -1959,7 +1926,7 @@
                 totalCoins: 0,
                 purchases: 0,
                 questionsWrong: [],
-                achievements: ['guest'], // Only guest achievement
+                achievements: ['guest'],
                 shopPrices: {
                     levelUp: 50,
                     xpBoost: 100,
@@ -2220,7 +2187,7 @@
         }
 
         function handleWrong(correctAns) {
-            state.strikes--;
+            state.wrongCount++;
             
             const qid = state.currentQuestion.id;
             if (state.questionsWrong.includes(qid)) {
@@ -2245,14 +2212,11 @@
             updateUI();
             log("Level progress reset due to incorrect answer.", "warn");
             
-            if (state.strikes <= 0) {
-                unlockAchievement('neither_precise');
-                gameOver();
-            } else {
-                updateUI();
-                document.getElementById('user-input').value = '';
-                document.getElementById('user-input').focus();
-            }
+            checkAchievements();
+            
+            updateUI();
+            document.getElementById('user-input').value = '';
+            document.getElementById('user-input').focus();
             
             saveGame();
         }
@@ -2271,19 +2235,12 @@
             state.xp -= state.xpNeeded;
             state.level++;
             state.xpNeeded = Math.floor(state.xpNeeded * 1.2);
-            state.strikes = state.maxStrikes;
             
             log(`LEVEL UP! You are now Level ${state.level}.`, "success");
             
             const bar = document.getElementById('xp-bar');
             bar.style.boxShadow = "0 0 30px var(--accent-yellow)";
             setTimeout(() => bar.style.boxShadow = "0 0 15px var(--accent-green)", 500);
-        }
-
-        function gameOver() {
-            log("CRITICAL FAILURE. SYSTEM HALTED.", "error");
-            alert(`Game Over! You reached Level ${state.level} with a score of ${state.score}.`);
-            location.reload();
         }
 
         // --- UI Helpers ---
@@ -2298,8 +2255,7 @@
             }
             
             document.getElementById('score-display').innerText = state.score;
-            document.getElementById('strikes-display').innerText = state.strikes;
-            document.getElementById('max-strikes').innerText = state.maxStrikes;
+            document.getElementById('wrong-display').innerText = state.wrongCount;
             document.getElementById('coins-display').innerText = `🪙 ${state.coins}`;
         }
 
@@ -2337,10 +2293,11 @@
             generateQuestion();
         }
 
-        function setStrikes(n) {
-            state.strikes = n;
+        function addWrong(n) {
+            state.wrongCount += n;
             updateUI();
-            log(`Strikes set to ${n}.`, "warn");
+            checkAchievements();
+            log(`Added ${n} wrong answers.`, "warn");
         }
 
         // --- LocalStorage Save/Load ---
@@ -2397,4 +2354,5 @@
         }
     </script>
 </body>
+
 </html>
